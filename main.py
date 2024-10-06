@@ -1,9 +1,12 @@
+import fnmatch
+import logging
 import signal
 import socket
+import sys
 import threading
 import socket
-
-
+from time import localtime, strftime
+import colorizePython
 class Server:
     def __init__(self, config) -> None:
         # pour pouvoir arrêter avec un Ctrl + C
@@ -94,10 +97,62 @@ class Server:
         finally:
             conn.close()  # Fermer la connexion du client
             s.close()  # Fermer la connexion du serveur distant
+    def verify(self,config,conn,url):
+        for i in range(0, len(config['BLACKLIST_DOMAINS'])):
+            if config['BLACKLIST_DOMAINS'][i] in url:
+                conn.close()
+        return
+    def _ishostAllowed(self, host):
 
+        """ Check if host is allowed to access
+            the content """
+        for wildcard in config['HOST_ALLOWED']:
+            if fnmatch.fnmatch(host, wildcard):
+                logging.basicConfig(level = logging.DEBUG,
+format = '[%(CurrentTime)-10s] (%(ThreadName)-10s) %(message)s',)
+                return True
+        return False
+    
     def shutdown(self, signum, frame):
-        print("Server shutting down...")
-        self.serverSocket.close()
+        """ Handle the exiting server. Clean all traces """
+        self.log("WARNING", -1, 'Shutting down gracefully...')
+        main_thread = threading.currentThread() # Wait for all clients to exit
+        for t in threading.enumerate():
+            if t is main_thread:
+                continue
+                self.log("FAIL", -1, 'joining ' + t.getName())
+            t.join()
+            self.serverSocket.close()
+        sys.exit(0)
+def colorizeLog(shouldColorize, log_level, msg):
+        ## Higher is the log_level in the log()
+        ## argument, the lower is its priority.
+        colorize_log = {
+        "NORMAL": colorizePython.pycolors.ENDC,
+        "WARNING": colorizePython.pycolors.WARNING,
+        "SUCCESS": colorizePython.pycolors.OKGREEN,
+        "FAIL": colorizePython.pycolors.FAIL,
+        "RESET": colorizePython.pycolors.ENDC
+        }
+
+        if shouldColorize.lower() == "true":
+            if log_level in colorize_log:
+                return colorize_log[str(log_level)] + msg + colorize_log['RESET']
+            return colorize_log["NORMAL"] + msg + colorize_log["RESET"]
+        return msg 
+def log(self, log_level, client, msg):
+
+    """ Log the messages to appropriate place """
+    LoggerDict = {
+    'CurrentTime' : strftime("%a, %d %b %Y %X", localtime()),
+    'ThreadName' : threading.currentThread().getName()
+    }
+    if client == -1: # Main Thread
+        formatedMSG = msg
+    else: # Child threads or Request Threads
+        formatedMSG = '{0}:{1} {2}'.format(client[0], client[1], msg)
+    logging.debug('%s', colorizeLog(config['COLORED_LOGGING'],
+    log_level, formatedMSG), extra=LoggerDict)
 if __name__ == "__main__":
     # Configuration du serveur
     
